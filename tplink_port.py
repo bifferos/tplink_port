@@ -20,13 +20,14 @@
 
 import sys
 import json
-import httpx
+import requests
 import re
 from pathlib import Path
 from argparse import ArgumentParser
 from functools import lru_cache
-from bs4 import BeautifulSoup
 from dataclasses import dataclass
+from html.parser import HTMLParser
+
 
 HOME = Path.home()
 DOT_FILE = HOME / ".tplink_config"
@@ -69,14 +70,38 @@ class PortValue:
     state: int
 
 
+class ScriptTagParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.scripts = []
+        self.in_script = False
+        self.current_script = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "script":
+            self.in_script = True
+            self.current_script = []
+
+    def handle_endtag(self, tag):
+        if tag == "script" and self.in_script:
+            self.in_script = False
+            self.scripts.append("".join(self.current_script))
+
+    def handle_data(self, data):
+        if self.in_script:
+            self.current_script.append(data)
+
+
 def get_port_status(client):
     config = get_config()
     # Define the URL and form parameters
     response = client.get(f"http://{config['host']}/PortSettingRpm.htm")
-    soup = BeautifulSoup(response.text, "html.parser")
-    script = soup.find_all("script")[0]
+    parser = ScriptTagParser()
+    parser.feed(response.text)
+    all_scripts = parser.scripts
+    script = all_scripts[0]
     rex = re.compile(r"var all_info = {(.*?)}", re.M | re.DOTALL)
-    match = rex.search(script.text)
+    match = rex.search(script)
     out = {}
     if match is not None:
         js = match.group(1)
@@ -122,7 +147,7 @@ def main():
     args = parser.parse_args()
 
     # Start an HTTP session
-    with httpx.Client() as client:
+    with requests.Session() as client:
         do_login(client)
         if args.operation is None:
             values = get_port_status(client)
