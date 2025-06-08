@@ -31,14 +31,21 @@ from html.parser import HTMLParser
 
 HOME = Path.home()
 DOT_FILE = HOME / ".tplink_config"
+GLOBAL_DOT_FILE = Path("/etc/tplink_config.json")
+
+
+
+def load_config():
+    if DOT_FILE.exists():
+        return json.load(DOT_FILE.open())
+    if GLOBAL_DOT_FILE.exists():
+        return json.load(GLOBAL_DOT_FILE.open())
+    sys.exit(f"Config file not found in either {DOT_FILE} or {GLOBAL_DOT_FILE}")
 
 
 @lru_cache
 def get_config():
-    if not DOT_FILE.exists():
-        sys.exit(f"Config file {DOT_FILE} not found")
-
-    config = json.load(DOT_FILE.open())
+    config = load_config()
 
     return {
         "login_form": {
